@@ -47,20 +47,56 @@ Japanese:
 
 ## Install
 
-For Claude Code, clone the repository into your personal skills folder:
+Install the skill in the personal skills folder for your agent. These folders make it available across
+your projects. See the official [Codex skills guide](https://developers.openai.com/codex/skills) and
+[Claude Code skills guide](https://code.claude.com/docs/en/skills) for current discovery behavior.
+
+### Codex
+
+macOS / Linux:
 
 ```sh
-git clone https://github.com/ishizakahiroshi/typo-humanizer ~/.claude/skills/typo-humanizer
+mkdir -p "$HOME/.agents/skills"
+git clone https://github.com/ishizakahiroshi/typo-humanizer "$HOME/.agents/skills/typo-humanizer"
 ```
 
-On Windows (PowerShell):
+Windows (PowerShell):
 
 ```powershell
+New-Item -ItemType Directory -Force "$HOME\.agents\skills" | Out-Null
+git clone https://github.com/ishizakahiroshi/typo-humanizer "$HOME\.agents\skills\typo-humanizer"
+```
+
+Update an existing Codex installation with:
+
+```sh
+git -C "$HOME/.agents/skills/typo-humanizer" pull --ff-only
+```
+
+### Claude Code
+
+macOS / Linux:
+
+```sh
+mkdir -p "$HOME/.claude/skills"
+git clone https://github.com/ishizakahiroshi/typo-humanizer "$HOME/.claude/skills/typo-humanizer"
+```
+
+Windows (PowerShell):
+
+```powershell
+New-Item -ItemType Directory -Force "$HOME\.claude\skills" | Out-Null
 git clone https://github.com/ishizakahiroshi/typo-humanizer "$HOME\.claude\skills\typo-humanizer"
 ```
 
-For other agents, put the folder wherever the agent loads skills from, or tell the agent to read
-`SKILL.md` before the task.
+Update an existing Claude Code installation with:
+
+```sh
+git -C "$HOME/.claude/skills/typo-humanizer" pull --ff-only
+```
+
+For other agents, put the folder in that agent's documented personal skills directory, or tell the
+agent to read `SKILL.md` before the task.
 
 ## Usage
 
@@ -69,6 +105,7 @@ Ask in plain language:
 - "Add a few typos to this: ..."
 - "Make this look like it was dictated on a phone. Medium, and show me the changes."
 - "Use keyboard pattern K5 at intensity 3, every time, and show the changes: ..."
+- "Add a few typos, exclude pattern K5, and use subtle mistakes only: ..."
 - 「この文章に誤字を混ぜて。スマホのフリック入力風、弱めで」
 
 | Option | Values | Default |
@@ -76,12 +113,15 @@ Ask in plain language:
 | language | any language name or ISO 639-1 code | detected from the text |
 | input mode | `keyboard` / `mobile` / `voice` (Japanese uses `flick` instead of `mobile`) | the pack's default |
 | pattern(s) | one or more IDs or type names from the language pack | all eligible patterns |
+| excluded pattern(s) | one or more IDs or type names to leave out | none |
+| visibility cap | `automatic` / `subtle-only` | the pack's normal behavior |
 | frequency | `N/10`: how many requests in 10 get any slip. "always" means `10/10` | `2/10` |
 | intensity | `1`–`10`: how many slips to aim for when this text gets them. Specifying an intensity forces a slip unless you also specify frequency. `light` / `medium` / `heavy` remain aliases for `1` / `4` / `10` | `1` |
 | exact count | a count such as "3 typos"; overrides frequency and intensity and forces that count | none |
 | genre | `chat` / `email` / `document` | detected from the text |
 | show changes | on / off | off |
 | protect | words or spans to leave untouched | — |
+| usage log | `on` / `off` / `summary` | off |
 
 **Most requests come back unchanged, on purpose.** People don't make a typo in every message, and
 text that always has one reads as careless rather than human. At the default `2/10`, about 2 requests
@@ -90,11 +130,30 @@ four times as many slips as `1`, spread evenly across ten levels. If the agent c
 otherwise the model decides, and the rate may drift. Say "always" to force slips. Selecting a pattern
 or specifying an intensity also forces a slip unless you specify a frequency; an exact count overrides both and forces that count.
 
+Excluded patterns are removed before selection. If a selected pattern is also excluded, or
+`subtle-only` conflicts with a selected noticeable pattern, the skill explains the conflict and leaves
+the text unchanged. It does not silently substitute a different pattern.
+
 When a text does get slips, the skill prefers ones a writer would miss on a quick reread, clusters
 them the way real slips cluster (long sentences, the end of a long text), and uses fewer in formal
 writing.
 
 Never changed: numbers, dates, amounts, URLs, code, file paths, names, quotations, and negations.
+
+### Local usage log
+
+Logging is off by default. Ask "usage log on" to opt in, "usage log off" to stop future rows, or
+"usage log summary" to see aggregate counts. The preference and CSV live in your user home folder at
+`~/.typo-humanizer/settings.json` and `~/.typo-humanizer/usage.csv` (on Windows, under `%USERPROFILE%`).
+The CSV records a timestamp, language, mode, genre, frequency, intensity, inserted-slip count, and
+pattern IDs with counts. It never stores input or output text, prompts, names, or source file paths.
+The skill appends locally and does not upload or sync the log; your own backup or sync software may
+still copy home-folder files. If the agent cannot access the file, it continues without logging and
+says so. A summary reports totals only.
+
+```csv
+timestamp,language,mode,genre,frequency,intensity,inserted_count,patterns
+```
 
 ## Language packs
 
@@ -119,4 +178,4 @@ Native speakers reviewing the English pack, or adding a new one, are very welcom
 
 ## License
 
-MIT
+MIT. See [LICENSE](LICENSE).

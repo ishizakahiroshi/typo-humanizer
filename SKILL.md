@@ -1,6 +1,6 @@
 ---
 name: typo-humanizer
-description: Adds human-like slips (typos, IME conversion mistakes, speech-to-text errors) to text so it reads as typed or dictated by a person. Packs for Japanese and English; other languages use AI inference. Supports explicit patterns and 1–10 intensity. Triggers: "add typos", "誤字を混ぜて", "音声入力っぽく".
+description: 'Adds realistic keyboard, mobile, and voice-input slips using language packs or AI inference. Supports selected and excluded patterns, visibility caps, and 1–10 intensity. Use for "add typos" or "誤字を混ぜて" requests.'
 ---
 
 # typo-humanizer
@@ -23,12 +23,50 @@ Read these from the user's request. Ask only when the text itself is missing or 
 | language | auto-detect | Language name or ISO 639-1 code. A language the user names wins over detection |
 | input mode | the pack's default | `keyboard` / `mobile` / `voice`. Packs may define their own modes (e.g. Japanese `flick`). `mixed` when requested or when the user selects patterns from multiple modes |
 | pattern(s) | all compatible rows | One or more error IDs or type names from the language pack. Restricts which mechanisms can be used. An explicitly selected pattern forces a slip unless the user also specifies frequency |
+| excluded pattern(s) | none | One or more error IDs or type names to remove from consideration, even when they would otherwise be eligible |
+| visibility cap | the pack's normal behavior | `automatic` or `subtle-only`. `subtle-only` makes every `noticeable` row ineligible |
 | frequency (ゆらぎ度) | `2/10` | Chance this text gets any slip: `N/10`. At `2/10`, about 2 requests in 10 get slips and the rest come back unchanged. "Always" / 「必ず」 means `10/10` |
 | intensity | `1` | Density when slips are added, from `1` (fewest) to `10` (most). An explicitly provided intensity forces a slip unless the user also specifies frequency. `light` / `medium` / `heavy` remain aliases for `1` / `4` / `10` |
 | exact count | none | A count such as "3 typos" overrides frequency and intensity, forcing exactly that many slips for this text |
 | genre | auto-detect | `chat` / `email` / `document`. Changes how many slips survive and which kinds |
 | show changes | off | When on, list every change after the text |
 | protect | see Step 5 | Extra words or spans the user wants left untouched |
+| usage log | off | `on`, `off`, or `summary`. A saved opt-in records aggregate usage locally; it never records text |
+
+## Usage log controls
+
+Handle an explicit usage-log control request before processing text. These controls can be used without
+providing text:
+
+- "usage log on" / 「利用ログをオン」 saves `{"usageLogEnabled":true}` to
+  `~/.typo-humanizer/settings.json`. If text is included in the same request, record that run too.
+- "usage log off" / 「利用ログをオフ」 saves `{"usageLogEnabled":false}`. Keep the existing CSV; disabling logging does not delete history.
+- "usage log summary" / 「利用ログを集計」 reads `~/.typo-humanizer/usage.csv` and reports aggregate totals only. Do not repeat individual rows.
+
+On Windows, `~` means the current user's home directory (normally `%USERPROFILE%`); on macOS and Linux,
+it means `$HOME`. The directory and files are per user on that PC. Do not add a PC name or other device
+identifier. A missing, invalid, or unreadable settings file means logging is off. The settings file may
+contain only the `usageLogEnabled` boolean. Do not create it unless the user explicitly turns logging
+on or off. If the setting cannot be written, explain that the change was not saved and do not claim it
+will persist; treat logging as off for the current session unless the user separately asks to record one
+run.
+
+When logging is enabled, append one row for each text-processing request, including a request where no
+slip was inserted. Create the directory and CSV header only when needed. Use this header:
+
+```csv
+timestamp,language,mode,genre,frequency,intensity,inserted_count,patterns
+```
+
+Use an ISO 8601 timestamp with timezone. `patterns` contains only pack IDs with counts, such as
+`K5:1;V2:1`; leave it empty when no slips were inserted. Escape fields using standard CSV rules and
+append rows without rewriting earlier rows. Never record input/output text, protected words, prompts,
+user or computer names, or source file paths. If file access or append fails, continue the text task,
+say that this run was not logged, and do not claim the setting or row was saved.
+
+For a summary, report the number of logged requests, total inserted slips, and useful totals by
+language, mode, and pattern when those columns are present. If the CSV is missing or unreadable, say
+there is no readable local history. Do not change or delete history during a summary.
 
 ## Step 1: Load the language pack
 
@@ -50,6 +88,14 @@ A pack cannot relax Step 5 (Protect) or Step 7 (Check).
 ## Step 2: Pick the input mode
 
 Use the mode the user asked for; otherwise use the pack's default. A selected pattern can determine the mode when the user did not name one. If selected patterns belong to multiple modes, combine them only when the user asks for `mixed` or explicitly selects patterns from those modes. If a selected pattern conflicts with an explicit single mode, explain the conflict and ask which to use.
+
+Resolve selected and excluded patterns against the loaded pack before rolling for frequency. If any
+explicitly selected or excluded pattern is unknown, explain which one and return the original unchanged.
+If a pattern is both selected and excluded, explain the conflict and return the original unchanged.
+Exclusions remove rows from the candidate set; never replace an excluded row with an unrequested type.
+If exclusions leave no compatible or safe rows, return the original unchanged and explain why.
+With `subtle-only`, remove every `noticeable` row before placement. If an explicitly selected pattern
+is removed by this cap, explain the conflict and return the original unchanged.
 
 ## Step 3: Decide whether this text gets slips (frequency)
 
@@ -104,6 +150,8 @@ Never change:
 - **Prefer slips a writer would miss on a quick reread.** Use rows marked `subtle` in the pack's
   Visibility column. Use `noticeable` rows only in `chat` or at intensity `4`–`10`, unless the user
   explicitly selected that pattern.
+- Remove excluded patterns and apply the visibility cap before choosing rows. Exclusions and the cap
+  are hard limits, not preferences. If they leave no eligible row, return the original unchanged.
 - If the user selected patterns, use only those rows. Otherwise choose from all rows compatible with
   the input mode, using their weights. Do not silently replace an unknown, inapplicable, or conflicting
   selected pattern with another type.
@@ -139,10 +187,11 @@ Compare the result with the original and confirm all of the following. Redo any 
 1. The no-pack notice from Step 1, if it applies
 2. The text in a single fenced code block, with nothing else inside it. When the roll said no, this is
    the original text, unchanged
-3. One summary line in the user's language. Include the count or intensity, selected pattern when
-   present, mode, genre, and roll or forced state. Examples:
-   `2 changes · keyboard · intensity 4 · pattern K5 · chat · roll 1 (2/10)`, or
-   `No slips this time · keyboard · intensity 1 · roll 7 (2/10)`
+3. One summary line in the user's language. Include the count or intensity, selected and excluded patterns
+   when present, visibility cap when specified, mode, genre, and roll or forced state. If logging was
+   enabled, say whether the row was recorded. Examples:
+   `2 changes · keyboard · intensity 4 · pattern K5 · excluded V2 · chat · roll 1 (2/10) · usage log recorded`, or
+   `No slips this time · keyboard · intensity 1 · subtle-only · roll 7 (2/10)`
 4. If show changes is on and there are changes, a table: `# | original | changed | type`
 
 ## Don't
@@ -150,4 +199,4 @@ Compare the result with the original and confirm all of the following. Redo any 
 - Don't rewrite style, tone, vocabulary, or structure.
 - Don't imitate a specific real person's writing habits.
 - Don't claim or imply anything about AI-detection tools.
-- Don't write files unless the user asks; this skill returns text.
+- Don't write files unless the user asks or a previously saved usage-log opt-in authorizes the CSV append. This skill otherwise returns text.

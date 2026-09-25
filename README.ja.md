@@ -38,20 +38,52 @@ AI が書いた文章は、整いすぎていることがあります。人が�
 
 ## 導入
 
-Claude Code では、個人用の skills フォルダへ clone します。
+エージェントごとの個人用 skills フォルダへ clone します。保存先によって対応するプロジェクトが
+異なります。最新の読み込み仕様は、公式の [Codex skills ガイド](https://developers.openai.com/codex/skills) と
+[Claude Code skills ガイド](https://code.claude.com/docs/en/skills) を参照してください。
 
 ```sh
-git clone https://github.com/ishizakahiroshi/typo-humanizer ~/.claude/skills/typo-humanizer
+mkdir -p "$HOME/.agents/skills"
+git clone https://github.com/ishizakahiroshi/typo-humanizer "$HOME/.agents/skills/typo-humanizer"
 ```
 
 Windows（PowerShell）:
 
 ```powershell
+New-Item -ItemType Directory -Force "$HOME\.agents\skills" | Out-Null
+git clone https://github.com/ishizakahiroshi/typo-humanizer "$HOME\.agents\skills\typo-humanizer"
+```
+
+Codex の更新:
+
+```sh
+git -C "$HOME/.agents/skills/typo-humanizer" pull --ff-only
+```
+
+### Claude Code
+
+macOS / Linux:
+
+```sh
+mkdir -p "$HOME/.claude/skills"
+git clone https://github.com/ishizakahiroshi/typo-humanizer "$HOME/.claude/skills/typo-humanizer"
+```
+
+Windows（PowerShell）:
+
+```powershell
+New-Item -ItemType Directory -Force "$HOME\.claude\skills" | Out-Null
 git clone https://github.com/ishizakahiroshi/typo-humanizer "$HOME\.claude\skills\typo-humanizer"
 ```
 
-ほかのエージェントでは、そのエージェントが skill を読み込むフォルダに置くか、作業の前に
-`SKILL.md` を読むよう指示してください。
+Claude Code の更新:
+
+```sh
+git -C "$HOME/.claude/skills/typo-humanizer" pull --ff-only
+```
+
+ほかのエージェントでは、公式の個人用 skills フォルダに置くか、作業前に `SKILL.md` を読むよう
+指示してください。
 
 ## 使い方
 
@@ -60,6 +92,7 @@ git clone https://github.com/ishizakahiroshi/typo-humanizer "$HOME\.claude\skill
 - 「この文章に誤字を混ぜて。スマホのフリック入力風、弱めで」
 - 「この文章に誤字を混ぜて。フリックの F2 を強度 3 で必ず使って」
 - 「音声入力で書いたっぽくして。中くらいで、どこを変えたかも見せて」
+- 「この文に誤字を混ぜて。K5 は除外して、目立たない誤字だけにして」
 - "Add a few typos to this: ..."
 
 | 指定 | 値 | 既定 |
@@ -67,12 +100,15 @@ git clone https://github.com/ishizakahiroshi/typo-humanizer "$HOME\.claude\skill
 | 言語 | 言語名か ISO 639-1 のコード | 文章から判定 |
 | 入力方式 | `keyboard` / `flick` / `voice`（英語などは `flick` の代わりに `mobile`） | 言語パックの既定 |
 | 誤字パターン | パックにある型の ID または名前を 1 つ以上 | 条件に合う全型 |
+| 除外パターン | 使わない型の ID または名前を 1 つ以上 | なし |
+| 目立ち度の上限 | `automatic` / `subtle-only`（目立つ型を使わない） | パックの通常動作 |
 | ゆらぎ度 | `N/10`。10 回頼んだら何回誤字が入るか。「必ず」は `10/10` | `2/10` |
 | 強度 | 誤字が入る回に何か所入れるか。`1`〜`10`（10 は 1 の約 4 倍）。`light` / `medium` / `heavy` はそれぞれ `1` / `4` / `10` と同じ | `1` |
 | 個数 | 「3 か所」のように誤字の数を指定。ゆらぎ度と強度を上書きし、その数を必ず入れる | 指定なし |
 | 文章の種類 | `chat` / `email` / `document` | 文章から判定 |
 | 変更点の表示 | あり / なし | なし |
 | 保護 | 触ってほしくない語や範囲 | — |
+| 利用ログ | `on` / `off` / `summary` | off |
 
 **ほとんどの回は、文章がそのまま返ってきます。わざとです。** 人は毎回誤字をするわけではなく、
 毎回どこかが間違っている文章は、人らしいというより雑に見えます。既定のゆらぎ度 `2/10` では、
@@ -85,10 +121,31 @@ git clone https://github.com/ishizakahiroshi/typo-humanizer "$HOME\.claude\skill
 パターンまたは強度を指定し、ゆらぎ度を指定しない場合は 1 件以上入れます。ゆらぎ度も同時に指定した場合は、
 個数の指定がない限り、そのゆらぎ度に従います。
 
+除外した型は選択対象から外します。指定した型を同時に除外した場合や、`subtle-only` と
+「目立つ型を使う」指定が衝突した場合は、理由を説明して元の文を返します。別の型へ勝手に
+置き換えません。
+
 誤字が入る回は、書いた本人が読み返しても見落としそうな誤字を選びます。置き方も均等にせず、
 長い文や長い文章の後半に寄せます。丁寧な文章では数を減らします。
 
 数字・日付・金額・URL・コード・ファイルパス・名前・引用・否定の語には、どの設定でも手を付けません。
+
+### ローカル利用ログ
+
+利用ログは初期状態ではオフです。「利用ログをオン」で記録を開始し、「利用ログをオフ」で以後の
+記録を止めます。「利用ログを集計」で、蓄積済みの回数や誤字数を集計できます。設定と CSV は
+ユーザーのホームフォルダに置きます。場所は `~/.typo-humanizer/settings.json` と
+`~/.typo-humanizer/usage.csv` です（Windows では通常 `%USERPROFILE%` の下です）。
+
+CSV に記録するのは日時、言語、入力方式、文章の種類、ゆらぎ度、強度、追加した誤字の数、型 ID と
+その個数です。入力文・出力文・指示文・名前・元ファイルのパスは記録しません。skill 自体はログを
+アップロード・同期しませんが、PC 側のバックアップや同期ソフトがホームフォルダを複製する場合は
+その対象になりえます。エージェントがファイルにアクセスできない場合は、文章の処理を続け、記録
+できなかったことを伝えます。集計時も個々の CSV 行は表示しません。
+
+```csv
+timestamp,language,mode,genre,frequency,intensity,inserted_count,patterns
+```
 
 ## 言語パック
 
@@ -113,4 +170,4 @@ git clone https://github.com/ishizakahiroshi/typo-humanizer "$HOME\.claude\skill
 
 ## ライセンス
 
-MIT
+MIT。詳細は [LICENSE](LICENSE) を参照してください。
