@@ -74,3 +74,6 @@ secrets.*
 
 # === project-init: obsidian public ===
 /docs/obsidian/
+
+# Local video production files
+/brag-output/
